@@ -3,7 +3,8 @@ import sys
 import re
 import pickle
 import os
-
+from pathlib import Path
+import datetime
 
 def get_value_list(t_2d):
     return([[cell.value for cell in row] for row in t_2d])
@@ -19,23 +20,40 @@ def excel_date(num):
     from datetime import datetime, timedelta
     return(datetime(1899, 12, 30) + timedelta(days=num))
 
-pklfile = "schedule.pkl"
-xlsx_name = 'schedule.xlsx'
+def old_pklfile_del(xlsx_file, pkl_file):
+    if not os.path.isfile(pkl_file):
+        return
+
+    p_xlsx = Path(xlsx_file)
+    p_pkl = Path(pkl_file)
+
+    xlsx_update_time = datetime.datetime.fromtimestamp(p_xlsx.stat().st_mtime)
+    pkl_update_time = datetime.datetime.fromtimestamp(p_pkl.stat().st_mtime)
+
+    if xlsx_update_time > pkl_update_time:
+        os.remove(pklfile)
 
 all_2d = []
 c = 1
+mon = 12
+
+xlsx_name = 'schedule.xlsx'
+pklfile = "schedule.pkl"
+
+args = sys.argv
+
+if len(args) == 2:
+    xlsx_name = args[1]
+
+old_pklfile_del(xlsx_name, pklfile)
 
 if not os.path.isfile(pklfile):
-    args = sys.argv
-
-    if len(args) == 2:
-        xlsx_name = args[1]
-
+    print("Making pkl file.", file=sys.stderr)
     wb = px.load_workbook(xlsx_name, data_only=True)
 
     sheet = wb.active
 
-    for i in range(12):
+    for i in range(mon):
         all_2d.append(get_list_2d(sheet, 5, 128, c, c + 16))
         c += 17
     with open(pklfile, "wb") as f:
@@ -43,6 +61,7 @@ if not os.path.isfile(pklfile):
 else:
     with open(pklfile, "rb") as f:
         all_2d = pickle.load(f)
+
 
 print("Subject,Start Date,All Day Event")
 for l_2d in all_2d:
