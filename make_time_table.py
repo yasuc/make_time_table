@@ -10,9 +10,9 @@ from pathlib import Path
 time_range = [
 	["9:00", "10:30"],
 	["10:40", "12:10"],
-	["14:00", "15:30"],
-	["15:40", "17:10"],
-	["14:00", "17:10"],
+	["13:40", "15:10"],
+	["15:20", "16:50"],
+	["13:40", "16:50"],
 ]
 
 subjects = [
@@ -34,11 +34,11 @@ subjects = [
     ],[
 
 # 後期用
-    [1, "情報セキュリティII", 2, "講1-1:2", 0],
-    [1, "情報セキュリティII", 3, "講1-1:2", 0],
+    [1, "情報セキュリティII", 2, "講1-1,2", 0],
+    [1, "情報セキュリティII", 3, "講1-1,2", 0],
     [3, "卒業研究", 5, "OLab", 0],
-    [3, "コンピュータネットワークI", 2, "講2-2", 0],
-    [4, "OSとコンパイラI", 2, "講1-1:2", 0],
+    [3, "コンピュータネットワークI", 1, "講2-2", 0],
+    [4, "OSとコンパイラI", 2, "講1-2", 0],
     [4, "卒業研究", 5, "OLab", 0],
 ]
 ]
@@ -76,7 +76,7 @@ parser = argparse.ArgumentParser(description="時間割作成プログラム")
 
 parser.add_argument('-x', '--xlsx', default='schedule.xlsx', help='スケジュールExcelファイル')
 parser.add_argument('-s', '--start', default=1, type=int, help='開始回')
-parser.add_argument('-e', '--end', default=15, type=int, help='修了回')
+parser.add_argument('-e', '--end', default=15, type=int, help='終了回')
 parser.add_argument('-t', '--term', default=1, type=int, help='前後期(1:前期, 2:後期)')
 
 args = parser.parse_args()
