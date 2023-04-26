@@ -18,7 +18,8 @@ def get_list_2d(sheet, start_row, end_row, start_col, end_col):
 
 def excel_date(num):
     from datetime import datetime, timedelta
-    return(datetime(1899, 12, 30) + timedelta(days=num))
+    #return(datetime(1899, 12, 30) + timedelta(days=num))
+    return(datetime.strptime(num, '%Y/%m/%d'))
 
 def old_pklfile_del(xlsx_file, pkl_file):
     if not os.path.isfile(pkl_file):
@@ -67,7 +68,8 @@ print("Subject,Start Date,All Day Event")
 for l_2d in all_2d:
     for t in l_2d:
         if t[0] is not None:
-            day = excel_date(t[0]).strftime('%Y/%m/%d')
+            #day = excel_date(t[0]).strftime('%Y/%m/%d')
+            day = t[0].strftime('%Y/%m/%d')
             for j in range(2, 7):
                 if t[j] is not None:
                     csv = "{:s},{:s},TRUE".format(re.sub('※.*', '', t[j]), day)
