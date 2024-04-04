@@ -1,0 +1,13 @@
+{
+  "cloudlatex.projectId": 830617,
+  "cloudlatex.enabled": true,
+  "cloudlatex.outDir":  "./.workspace",
+  "latex-workshop.latex.autoBuild.run": "never",
+  "latex-workshop.latex.outDir": "./.workspace",
+  "[latex]": {
+    "editor.formatOnSave": false,
+  },
+  "cSpell.words": [
+    "pklfile"
+  ]
+}
