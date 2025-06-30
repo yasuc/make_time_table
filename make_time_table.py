@@ -4,6 +4,7 @@ import pickle
 import os
 import datetime
 import argparse
+import json
 from pathlib import Path
 
 time_range = [
@@ -14,35 +15,13 @@ time_range = [
     ["13:00", "16:10"],
 ]
 
-subjects = [
-    [
-        #    [ 曜日(1-5),
-        #      科目名,
-        #      時限(1-4 and 5(3+4)),
-        #      場所,
-        #      0:本科、1:専攻科],
-        # 前期用
-        [1, "コンピュータネットワークI", 1, "講2-2", 0],
-        [2, "情報セキュリティI", 2, "講1-2", 0],
-        [2, "科学技術英語", 3, "OLab", 0],
-        [3, "卒業研究", 5, "OLab", 0],
-        [4, "卒業研究", 5, "OLab", 0],
-        [5, "情報セキュリティ特論", 2, "NW演習室", 1],
-        # [1, "オブジェクト指向言語", 3, "講1-2", 0],
-        # [4, "コンピュータネットワークII", 1, "講1-2", 0],
-    ],
-    [
-        # 後期用
-        [1, "コンピュータネットワークI", 1, "講2-2", 0],
-        [2, "情報セキュリティII", 2, "NW演習室", 0],
-        [3, "卒業研究", 5, "OLab", 0],
-        [4, "情報セキュリティII", 2, "NW演習室", 0],
-        [4, "情報セキュリティII", 2, "NW演習室", 0],
-        [4, "卒業研究", 5, "OLab", 0],
-        [5, "デジタルフォレンジック", 3, "NW演習室", 1],
-        # [2, "OSとコンパイラI", 3, "講1-2", 0],
-    ],
-]
+def get_subjects(term, json_file="subjects.json"):
+    with open(json_file, "r", encoding="utf-8") as f:
+        subjects_data = json.load(f)
+    if term == 1:
+        return subjects_data["term1"]
+    else:
+        return subjects_data["term2"]
 
 
 def get_value_list(t_2d):
@@ -126,8 +105,10 @@ def main():
         with open(pklfile, "rb") as f:
             all_2d = pickle.load(f)
 
+    subjects = get_subjects(term)
+
     print("Subject,Start Date,Start Time,End Date,End Time")
-    for s in subjects[term - 1]:
+    for s in subjects:
         n = 1
         for l_2d in all_2d:
             for t in l_2d:
