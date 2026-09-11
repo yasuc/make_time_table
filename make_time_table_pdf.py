@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-make_time_table_pdf をゼロから書き直した、コメント充実版
 
+"""
 【このプログラムの目的】
     年間行事予定表 PDF（4ページ、各ページに3か月分の表）から
     授業が行われた日を読み取り、「科目名・何回目・開始日時・終了日時」を
@@ -13,7 +11,7 @@ make_time_table_pdf をゼロから書き直した、コメント充実版
     各科目の n 回目の講義日を特定しています。
 
 【使い方】
-    python3 make_time_table_pdf_new.py [オプション] > output.csv
+    python3 make_time_table_pdf.py [オプション] > output.csv
     （ファイルは作成せず標準出力へ出すので、> でリダイレクトします）
 
 【元のプログラムとの違い】
@@ -46,11 +44,11 @@ except ImportError as e:
 # 各時限の開始・終了時刻（配列の添え字 0 が 1 限、1 が 2 限 ...）
 # subjects.json の「時限」欄は 1 始まりなので、参照時に 1 を引いています。
 TIME_SLOTS = [
-    ("8:50", "10:20"),    # 1 限
-    ("10:30", "12:00"),   # 2 限
-    ("13:00", "14:30"),   # 3 限
-    ("14:40", "16:10"),   # 4 限
-    ("13:00", "16:10"),   # 特殊な時限（3 限+4 限分の長さ）
+    ("8:50", "10:20"),  # 1 限
+    ("10:30", "12:00"),  # 2 限
+    ("13:00", "14:30"),  # 3 限
+    ("14:40", "16:10"),  # 4 限
+    ("13:00", "16:10"),  # 特殊な時限（3 限+4 限分の長さ）
 ]
 
 # 授業回数として認識する数値の上限（回数セルの数字チェック幅として使用）
@@ -94,19 +92,19 @@ CELL_Y_TOLERANCE = 4.0
 #   [6:11]     : 本科の 月～金 の 5 列
 #   [11:16]    : 専攻科の 月～金 の 5 列
 #   [16]       : 末尾の未使用領域
-DATA_COL_OFFSET = 6          # 本科の開始列番号
-NUM_WEEKDAYS = 5             # 月～金の 5 曜日
-TOTAL_COLUMNS = 17           # 1 行の列数
+DATA_COL_OFFSET = 6  # 本科の開始列番号
+NUM_WEEKDAYS = 5  # 月～金の 5 曜日
+TOTAL_COLUMNS = 17  # 1 行の列数
 
 # 曜日文字（本科・専攻科で同じ順に並ぶ）
 WEEKDAY_CHARS = "月火水木金"
 
 # PDF のページ構成：各ページにどの月が載っているか（順は左→右）
 PAGE_MONTHS = (
-    (4, 5, 6),      # 1 ページ目
-    (7, 8, 9),      # 2 ページ目
-    (10, 11, 12),   # 3 ページ目
-    (1, 2, 3),      # 4 ページ目
+    (4, 5, 6),  # 1 ページ目
+    (7, 8, 9),  # 2 ページ目
+    (10, 11, 12),  # 3 ページ目
+    (1, 2, 3),  # 4 ページ目
 )
 
 # 学年度の考え方：4 ～ 12 月はその年度、1 ～ 3 月は翌年度
@@ -118,6 +116,7 @@ FIRST_YEAR_MONTH = 4
 # 科目データ
 # ==========================================================================
 
+
 @dataclass
 class Subject:
     """subjects.json の 1 行（1 科目分）を表すデータクラス。
@@ -128,11 +127,11 @@ class Subject:
           → グループ 1、2 限、教室「講1-2」、本科 の科目
     """
 
-    group: int      # グループ番号（1 始まり）。列番号計算の起点になる
-    name: str       # 科目名
-    period: int     # 時限（1 ～ 5）。TIME_SLOTS の添え字に 1 引いて使う
-    room: str       # 教室名（出力の [教室名] の部分に使う）
-    course: int     # 科（0 = 本科, 1 = 専攻科）
+    group: int  # グループ番号（1 始まり）。列番号計算の起点になる
+    name: str  # 科目名
+    period: int  # 時限（1 ～ 5）。TIME_SLOTS の添え字に 1 引いて使う
+    room: str  # 教室名（出力の [教室名] の部分に使う）
+    course: int  # 科（0 = 本科, 1 = 専攻科）
 
     def target_column(self) -> int:
         """この科目の講義回数が入っている列番号（0 始まり）を返す。
@@ -159,6 +158,7 @@ def load_subjects(json_file: str, term: int) -> list[Subject]:
 # PDF テキスト抽出の小道具
 # ==========================================================================
 
+
 def word_center_x(word) -> float:
     """PyMuPDF の word タプルの x 座標中心を返す。"""
     return (word[0] + word[2]) / 2.0
@@ -172,6 +172,7 @@ def word_center_y(word) -> float:
 # ==========================================================================
 # PDF の月ブロック解析
 # ==========================================================================
+
 
 def find_month_headers(page) -> list[tuple[float, int]]:
     """ページ内の「n 月」ヘッダを左から順に (x 中心, 月) で返す。
@@ -216,8 +217,7 @@ def find_weekday_columns(page, block_left: float) -> list[float]:
     candidates.sort()
     if len(candidates) < 10:
         raise ValueError(
-            "曜日ヘッダを 10 列取得できませんでした。"
-            f"（取得数={len(candidates)}）"
+            f"曜日ヘッダを 10 列取得できませんでした。（取得数={len(candidates)}）"
         )
     return [x for x, _ in candidates[:10]]
 
@@ -307,9 +307,7 @@ def parse_month(page, month_header_x: float, month: int, year: int) -> list[list
             for weekday in range(NUM_WEEKDAYS):
                 cell_x = weekday_x[weekday + course * NUM_WEEKDAYS]
                 target_column = DATA_COL_OFFSET + weekday + course * NUM_WEEKDAYS
-                row[target_column] = get_cell_value(
-                    page, cell_x, y, words
-                )
+                row[target_column] = get_cell_value(page, cell_x, y, words)
 
         rows.append(row)
 
@@ -331,8 +329,7 @@ def parse_schedule_pdf(pdf_file, academic_year: int) -> list[list[list]]:
     with pymupdf.open(pdf_path) as doc:
         if len(doc) < 4:
             raise ValueError(
-                "年間行事予定表は 4 ページを想定していますが、"
-                f"{len(doc)} ページです。"
+                f"年間行事予定表は 4 ページを想定していますが、{len(doc)} ページです。"
             )
 
         for page_index, expected_months in enumerate(PAGE_MONTHS):
@@ -361,6 +358,7 @@ def parse_schedule_pdf(pdf_file, academic_year: int) -> list[list[list]]:
 # ==========================================================================
 # CSV 出力
 # ==========================================================================
+
 
 def generate_ical_csv(all_months, subjects, start: int, end: int) -> None:
     """科目ごとに授業日をたどり、CSV 形式で標準出力へ書き出す。
@@ -397,6 +395,7 @@ def generate_ical_csv(all_months, subjects, start: int, end: int) -> None:
 # ==========================================================================
 # エントリポイント
 # ==========================================================================
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -442,9 +441,9 @@ def main() -> None:
     # 前期は 4 ～ 8 月、後期は 9 ～ 2 月（旧 Excel 版と同じ対象範囲）
     # ※ all_months の並びは「4月,5月,...,3月」なのでスライスで表せる
     if args.term == 1:
-        term_months = all_months[:5]      # 4 月 ～ 8 月
+        term_months = all_months[:5]  # 4 月 ～ 8 月
     else:
-        term_months = all_months[5:11]    # 9 月 ～ 2 月
+        term_months = all_months[5:11]  # 9 月 ～ 2 月
 
     subjects = load_subjects(args.subjects, args.term)
     generate_ical_csv(term_months, subjects, args.start, args.end)
@@ -452,3 +451,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
