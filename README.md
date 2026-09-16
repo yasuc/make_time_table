@@ -6,7 +6,7 @@
 | ツール | 入力 | 出力 |
 |---|---|---|
 | `make_time_table.py` | 年間行事予定表（PDF / Excel / URL） | 科目の時間割（講義日・時刻）CSV |
-| `make_schedule.py` | 年間行事予定表（Excel） | 行事予定（終日イベント）CSV |
+| `make_schedule.py` | 年間行事予定表（PDF / Excel / URL） | 行事予定（終日イベント）CSV |
 
 ## make_time_table.py（時間割の作成）
 
@@ -59,7 +59,7 @@ PDF の URL を直接指定することもできます。
 | `-e, --end` | 終了回 | 15 |
 | `-t, --term` | 前後期（1:前期, 2:後期） | 1 |
 | `-j, --subjects` | 科目定義JSONファイル | subjects.json |
-| `-y, --year` | 学年度の開始年（PDF のみ使用） | 2026 |
+| `-y, --year` | 学年度の開始年（PDF のみ使用。省略時はファイル名から推測: r7→2025 など） | 自動推測 |
 
 - `--xlsx` / `--pdf` / `--url` は同時には指定できません。
 - この 3 つをすべて省略した場合は、沖縄高専の年間行事予定表の Web ページから PDF を取得します。
@@ -67,21 +67,41 @@ PDF の URL を直接指定することもできます。
 
 ## make_schedule.py（行事予定表 CSV の作成）
 
-年間行事予定表 Excel ファイルに記載された行事名を読み取り、
+年間行事予定表（PDF または Excel ファイル）に記載された行事名を読み取り、
 「行事名・日付・終日イベント（TRUE）」の形式で CSV を標準出力へ流します。
 
-### 使い方
+`--xlsx` / `--pdf` / `--url` のいずれも指定しない場合は、沖縄高専の年間行事予定表の
+Web ページ（PDF）を自動的に読み込みます。
+
+### 使い方（Excel）
 ```
-python3 make_schedule.py 2026schedule.xlsx > 2026schedule.csv
+python3 make_schedule.py -x 2026schedule.xlsx > 2026schedule.csv
 ```
 
-**引数（位置引数）:**
-| 引数 | 説明 | デフォルト値 |
+### 使い方（PDF・ローカルファイル）
+```
+python3 make_schedule.py -p r7schedule_20251030.pdf -y 2025 > 2025schedule.csv
+```
+※`-y` は PDF の学年度（例: 令和7年度 = 2025）です。1 〜 3 月は翌年度として扱われます。
+`-y` を省略した場合は PDF ファイル名から自動推測します（例: `r7schedule_...pdf` → 2025）。
+
+### 使い方（URL から取得・沖縄高専デフォルト）
+```
+python3 make_schedule.py > 2026schedule.csv
+```
+`--url` を指定せずに実行すると、沖縄高専の年間行事予定表の Web ページに自動的にアクセスし、
+最初にリンクされている PDF を使用します（`make_time_table.py` と同じ仕組みです）。
+
+**オプション:**
+| オプション | 説明 | デフォルト値 |
 |---|---|---|
-| 第1引数 | 年間行事予定表 Excel ファイル（.xlsx） | schedule.xlsx |
-| 第2引数 | キャッシュファイル名（.pkl） | schedule.pkl |
+| `-x, --xlsx` | ローカルの年間行事予定表 Excel ファイル（.xlsx） | （指定なし = URL から取得） |
+| `-p, --pdf` | ローカルの年間行事予定表 PDF ファイル | （指定なし = URL から取得） |
+| `-u, --url [URL]` | 最初にリンクされた PDF を取得する Web ページ（PDF 直URLも可） | オプション指定時にURLを省略すると沖縄高専の年間行事予定ページ |
+| `-y, --year` | 学年度の開始年（PDF のみ使用。省略時はファイル名から推測: r7→2025 など） | 自動推測 |
 
-※一度実行すると `schedule.pkl` に Excel のデータがシリアライズされます。
+※Excel は全 12 か月を読み込みます。一度実行すると `schedule_pdflayout.pkl` に
+Excel のデータがシリアライズされ、次回からは高速に読み込まれます。
 Excel ファイルが更新されている場合は自動的に再作成されます。
 
 **出力形式:**
@@ -94,7 +114,7 @@ Subject,Start Date,All Day Event
 
 例:
 ```
-python3 make_schedule.py 2025schedule.xlsx > 2025schedule.csv
+python3 make_schedule.py -x 2025schedule.xlsx > 2025schedule.csv
 ```
 
 ## 科目定義ファイル (subjects.json)

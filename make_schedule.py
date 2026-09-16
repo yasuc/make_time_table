@@ -1,73 +1,118 @@
-import openpyxl as px
-import sys
+#!/usr/bin/env python3
+
+"""
+【このプログラムの目的】
+    年間行事予定表（PDF または Excel）から行事予定を読み取り、
+    Google Calendar などへ取り込める形式
+    「件名, 開始日, 終日イベント(TRUE)」
+    で CSV 形式を標準出力へ流すツールです。
+
+【使い方】
+    python3 make_schedule.py [オプション] > events.csv
+
+【入力ソース】
+    --url  : Web ページから PDF を取得（デフォルト: 沖縄高専）
+    --pdf  : ローカルの PDF ファイル
+    --xlsx : ローカルの Excel ファイル
+    いずれも指定しない場合は沖縄高専の年間行事予定表 URL を使用
+"""
+
+import argparse
 import re
-import pickle
-import os
-from pathlib import Path
-from datetime import datetime, timedelta
+import sys
 
-def get_value_list(t_2d):
-    return [[cell.value for cell in row] for row in t_2d]
+from schedule_common import (
+    DEFAULT_PAGE_URL,
+    EVENT_COL_START,
+    EVENT_COL_END,
+    current_academic_year,
+    infer_academic_year,
+    parse_schedule_excel_all,
+    parse_schedule_pdf,
+    resolve_pdf_source,
+)
 
-def get_list_2d(sheet, start_row, end_row, start_col, end_col):
-    return get_value_list(sheet.iter_rows(min_row=start_row, max_row=end_row, min_col=start_col, max_col=end_col))
 
-def excel_date(num):
-    return datetime.strptime(num, '%Y/%m/%d')
+def generate_event_csv(all_months) -> None:
+    """月ごとの表から行事を読み取り、CSV で標準出力へ流す。
 
-def update_needed(xlsx_file, pkl_file):
-    if not os.path.isfile(pkl_file):
-        return True
+    出力形式は
+        件名, 開始日, TRUE
+    の 3 列カンマ区切りです（3 列目は「終日イベント」フラグ）。
 
-    xlsx_update_time = datetime.fromtimestamp(Path(xlsx_file).stat().st_mtime)
-    pkl_update_time = datetime.fromtimestamp(Path(pkl_file).stat().st_mtime)
-
-    return xlsx_update_time > pkl_update_time
-
-def remove_file_if_exists(file_path):
-    if os.path.isfile(file_path):
-        os.remove(file_path)
-
-def process_schedule(xlsx_name, pklfile):
-    if update_needed(xlsx_name, pklfile):
-        remove_file_if_exists(pklfile)
-        print("Making pkl file.", file=sys.stderr)
-        wb = px.load_workbook(xlsx_name, data_only=True)
-        sheet = wb.active
-        all_2d = [get_list_2d(sheet, 5, 128, c, c + 16) for c in range(1, 193, 17)]
-        with open(pklfile, "wb") as f:
-            pickle.dump(all_2d, f)
-    else:
-        with open(pklfile, "rb") as f:
-            all_2d = pickle.load(f)
-    return all_2d
-
-def print_schedule(all_2d):
+    各行の [0] で日付が確定していない間は、直前の日付を引き継ぎます。
+    行事のテキストからは「※」から始まる注釈と空白を取り除きます。
+    """
     print("Subject,Start Date,All Day Event")
-    for l_2d in all_2d:
+    for month_rows in all_months:
         day = ""
-        for t in l_2d:
-            if t[0] is not None:
-                day = t[0].strftime('%Y/%m/%d')
-            for j in range(2, 7):
-                if t[j] is not None:
-                    subj = re.sub('※.*', '', t[j])
-                    subj = re.sub('[ 　]+', '', subj)
-                    if subj != "":
-                        csv = f"{subj},{day},TRUE"
-                        print(csv)
+        for row in month_rows:
+            if row[0] is not None:
+                day = row[0].strftime("%Y/%m/%d")
+            for col in range(EVENT_COL_START, EVENT_COL_END):
+                if row[col] is None:
+                    continue
+                subj = re.sub("※.*", "", row[col])
+                subj = re.sub("[ 　]+", "", subj)
+                if subj != "":
+                    print(f"{subj},{day},TRUE")
 
-def main():
-    xlsx_name = 'schedule.xlsx'
-    pklfile = "schedule.pkl"
-    args = sys.argv[1:]
-    if args:
-        xlsx_name = args[0]
-        if len(args) > 1:
-            pklfile = args[1]
 
-    all_2d = process_schedule(xlsx_name, pklfile)
-    print_schedule(all_2d)
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="年間行事予定表（PDF/Excel）から行事予定の CSV データを作成するプログラム"
+    )
+    source_group = parser.add_mutually_exclusive_group()
+    source_group.add_argument(
+        "-x",
+        "--xlsx",
+        help="ローカルの年間行事予定表 Excel ファイル (.xlsx)",
+    )
+    source_group.add_argument(
+        "-p",
+        "--pdf",
+        help="ローカルの年間行事予定表 PDF ファイル",
+    )
+    source_group.add_argument(
+        "-u",
+        "--url",
+        nargs="?",
+        const=DEFAULT_PAGE_URL,
+        metavar="URL",
+        help=(
+            "最初にリンクされた PDF を取得する Web ページの URL（PDF の直URLも可）。"
+            f"URL 省略時: {DEFAULT_PAGE_URL}"
+        ),
+    )
+    parser.add_argument(
+        "-y",
+        "--year",
+        default=None,
+        type=int,
+        help=(
+            "学年度の開始年（例: 2025 年度の PDF なら 2025）。"
+            "省略時は PDF ファイル名から推測します（r7 → 2025 など）。"
+        ),
+    )
+    args = parser.parse_args()
+
+    try:
+        if args.xlsx:
+            all_months = parse_schedule_excel_all(args.xlsx)
+        else:
+            if args.pdf:
+                pdf_source, source_name = resolve_pdf_source(args.pdf, None)
+            else:
+                url = args.url or DEFAULT_PAGE_URL
+                pdf_source, source_name = resolve_pdf_source(None, url)
+            print(f"Reading schedule PDF: {source_name}", file=sys.stderr)
+            year = args.year or infer_academic_year(source_name) or current_academic_year()
+            all_months = parse_schedule_pdf(pdf_source, year)
+    except (FileNotFoundError, RuntimeError, ValueError) as e:
+        parser.error(str(e))
+
+    generate_event_csv(all_months)
+
 
 if __name__ == "__main__":
     main()
