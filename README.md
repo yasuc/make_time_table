@@ -1,19 +1,28 @@
 # make_time_table 時間割と行事予定のCSVファイル作成ツール
 
 ## 概要
-年間行事予定表（PDF または Excel ファイル）から時間割用の CSV ファイルを作成するツールです。
+年間行事予定表（PDF または Excel ファイル）から CSV ファイルを作成するツール群です。
+
+| ツール | 入力 | 出力 |
+|---|---|---|
+| `make_time_table.py` | 年間行事予定表（PDF / Excel / URL） | 科目の時間割（講義日・時刻）CSV |
+| `make_schedule.py` | 年間行事予定表（Excel） | 行事予定（終日イベント）CSV |
+
+## make_time_table.py（時間割の作成）
+
+年間行事予定表から授業が行われた日を読み取り、
+「科目名・何回目・開始日時・終了日時」を CSV 形式で標準出力へ流します。
+科目の定義は `subjects.json` で行います。
 
 `--xlsx` / `--pdf` / `--url` のいずれも指定しない場合は、沖縄高専の年間行事予定表の
 Web ページ（PDF）を自動的に読み込みます。
 
-## 使い方
-
-### 時間割の作成例（PDF・ローカルファイル）
+### 使い方（PDF・ローカルファイル）
 ```
 python3 make_time_table.py -p r8schedule_20260624_1.pdf -t 1 > 2021time_table.csv
 ```
 
-### 時間割の作成例（Excel）
+### 使い方（Excel）
 ```
 python3 make_time_table.py -x 2026schedule.xlsx -t 1 > 2026time_table.csv
 ```
@@ -21,7 +30,7 @@ python3 make_time_table.py -x 2026schedule.xlsx -t 1 > 2026time_table.csv
 Excel のデータがシリアライズされ、次回からは高速に読み込まれます。Excel ファイルが更新されている場合は
 自動的に再作成されます。
 
-### 時間割の作成例（URL から取得・沖縄高専デフォルト）
+### 使い方（URL から取得・沖縄高専デフォルト）
 ```
 python3 make_time_table.py -t 1 > 2026time_table.csv
 ```
@@ -56,8 +65,41 @@ PDF の URL を直接指定することもできます。
 - この 3 つをすべて省略した場合は、沖縄高専の年間行事予定表の Web ページから PDF を取得します。
 - 「最初のPDF」は HTML 内の `<a href="...pdf">` を記載順に見た最初のリンクです。
 
+## make_schedule.py（行事予定表 CSV の作成）
+
+年間行事予定表 Excel ファイルに記載された行事名を読み取り、
+「行事名・日付・終日イベント（TRUE）」の形式で CSV を標準出力へ流します。
+
+### 使い方
+```
+python3 make_schedule.py 2026schedule.xlsx > 2026schedule.csv
+```
+
+**引数（位置引数）:**
+| 引数 | 説明 | デフォルト値 |
+|---|---|---|
+| 第1引数 | 年間行事予定表 Excel ファイル（.xlsx） | schedule.xlsx |
+| 第2引数 | キャッシュファイル名（.pkl） | schedule.pkl |
+
+※一度実行すると `schedule.pkl` に Excel のデータがシリアライズされます。
+Excel ファイルが更新されている場合は自動的に再作成されます。
+
+**出力形式:**
+```
+Subject,Start Date,All Day Event
+入学式,2025/04/03,TRUE
+```
+各行が 1 件の行事を表し、`All Day Event` は常に `TRUE`（終日イベント）です。
+行事名からは「※…」の注記と空白文字が除去されます。
+
+例:
+```
+python3 make_schedule.py 2025schedule.xlsx > 2025schedule.csv
+```
+
 ## 科目定義ファイル (subjects.json)
 
+`make_time_table.py` で使用する科目の定義ファイルです。
 各科目は以下の形式で定義されています：
 
 ```json
@@ -102,5 +144,5 @@ PDF の URL を直接指定することもできます。
 ```
 
 ## 依存関係
-- `pymupdf`（PDF 読み取り用）: `pip install pymupdf`
-- `openpyxl`（Excel 読み取り用）: `pip install openpyxl`
+- `pymupdf`（PDF 読み取り用 / make_time_table.py）: `pip install pymupdf`
+- `openpyxl`（Excel 読み取り用 / make_time_table.py, make_schedule.py）: `pip install openpyxl`
