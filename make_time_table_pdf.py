@@ -27,8 +27,12 @@ import json
 import re
 import sys
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlparse
+from urllib.request import Request, urlopen
 
 try:
     import pymupdf
@@ -110,6 +114,28 @@ PAGE_MONTHS = (
 # 学年度の考え方：4 ～ 12 月はその年度、1 ～ 3 月は翌年度
 # （例）2026 年度 = 2026 年 4 月～ 2027 年 3 月
 FIRST_YEAR_MONTH = 4
+
+# URL 取得時の設定
+DEFAULT_PAGE_URL = "https://www.okinawa-ct.ac.jp/campus_life/class/annualev/"
+HTTP_TIMEOUT_SECONDS = 30
+MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
+USER_AGENT = "make_time_table_pdf/1.0"
+
+
+class PdfLinkParser(HTMLParser):
+    """HTML に記載された最初の PDF リンクを取り出す。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.first_pdf_href: Optional[str] = None
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if self.first_pdf_href is not None or tag.lower() != "a":
+            return
+
+        href = dict(attrs).get("href")
+        if href and urlparse(href).path.lower().endswith(".pdf"):
+            self.first_pdf_href = href
 
 
 # ==========================================================================
@@ -314,19 +340,20 @@ def parse_month(page, month_header_x: float, month: int, year: int) -> list[list
     return rows
 
 
-def parse_schedule_pdf(pdf_file, academic_year: int) -> list[list[list]]:
+def parse_schedule_pdf(pdf_source, academic_year: int) -> list[list[list]]:
     """年間行事予定表 PDF を読み、学年度を通した月別の表を返す。
 
     返り値は「月ごとの表」のリスト。月の並びは 4 月 → 3 月です。
     ページ構成（PAGE_MONTHS）と PDF の記載月が一致しているかも検査します。
     """
 
-    pdf_path = Path(pdf_file)
-    if not pdf_path.is_file():
-        raise FileNotFoundError(f"PDF ファイルがありません: {pdf_file}")
-
     all_months = []
-    with pymupdf.open(pdf_path) as doc:
+    if isinstance(pdf_source, bytes):
+        doc_context = pymupdf.open(stream=pdf_source, filetype="pdf")
+    else:
+        doc_context = pymupdf.open(pdf_source)
+
+    with doc_context as doc:
         if len(doc) < 4:
             raise ValueError(
                 f"年間行事予定表は 4 ページを想定していますが、{len(doc)} ページです。"
@@ -353,6 +380,60 @@ def parse_schedule_pdf(pdf_file, academic_year: int) -> list[list[list]]:
                 all_months.append(parse_month(page, header_x, month, year))
 
     return all_months
+
+
+def _download(url: str) -> tuple[bytes, str, str]:
+    """URL を取得し、本文・最終URL・Content-Type を返す。"""
+    request = Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > MAX_DOWNLOAD_BYTES:
+                raise ValueError(
+                    f"ダウンロード対象が大きすぎます（上限 {MAX_DOWNLOAD_BYTES // 1024 // 1024} MB）。"
+                )
+            data = response.read(MAX_DOWNLOAD_BYTES + 1)
+            if len(data) > MAX_DOWNLOAD_BYTES:
+                raise ValueError(
+                    f"ダウンロード対象が大きすぎます（上限 {MAX_DOWNLOAD_BYTES // 1024 // 1024} MB）。"
+                )
+            return data, response.geturl(), response.headers.get_content_type()
+    except (HTTPError, URLError) as e:
+        raise RuntimeError(f"URL を取得できませんでした: {url} ({e})") from e
+
+
+def load_pdf_from_url(page_url: str) -> tuple[bytes, str]:
+    """Web ページの最初の PDF（または PDF の直URL）をメモリへ読み込む。"""
+    data, final_url, content_type = _download(page_url)
+    if content_type == "application/pdf" or data.startswith(b"%PDF-"):
+        return data, final_url
+
+    parser = PdfLinkParser()
+    try:
+        parser.feed(data.decode("utf-8", errors="replace"))
+    except Exception as e:
+        raise ValueError(f"Web ページの HTML を解析できませんでした: {final_url}") from e
+
+    if parser.first_pdf_href is None:
+        raise ValueError(f"Web ページに PDF へのリンクがありません: {final_url}")
+
+    pdf_url = urljoin(final_url, parser.first_pdf_href)
+    pdf_data, resolved_pdf_url, _ = _download(pdf_url)
+    if not pdf_data.startswith(b"%PDF-"):
+        raise ValueError(f"リンク先が PDF ではありません: {resolved_pdf_url}")
+    return pdf_data, resolved_pdf_url
+
+
+def resolve_pdf_source(pdf_file: Optional[str], page_url: Optional[str]):
+    """CLI の指定から PyMuPDF に渡す入力元と表示名を返す。"""
+    if page_url:
+        pdf_data, pdf_url = load_pdf_from_url(page_url)
+        return pdf_data, pdf_url
+
+    path = Path(pdf_file or "r8schedule_20260624_1.pdf")
+    if not path.is_file():
+        raise FileNotFoundError(f"PDF ファイルがありません: {path}")
+    return path, str(path)
 
 
 # ==========================================================================
@@ -401,11 +482,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="年間行事予定表 PDF から時間割用データを作成するプログラム"
     )
-    parser.add_argument(
+    source_group = parser.add_mutually_exclusive_group()
+    source_group.add_argument(
         "-p",
         "--pdf",
-        default="r8schedule_20260624_1.pdf",
-        help="年間行事予定表 PDF ファイル",
+        help="ローカルの年間行事予定表 PDF ファイル",
+    )
+    source_group.add_argument(
+        "-u",
+        "--url",
+        nargs="?",
+        const=DEFAULT_PAGE_URL,
+        metavar="URL",
+        help=(
+            "最初にリンクされた PDF を取得する Web ページの URL（PDF の直URLも可）。"
+            f"URL 省略時: {DEFAULT_PAGE_URL}"
+        ),
     )
     parser.add_argument("-s", "--start", default=1, type=int, help="開始回数")
     parser.add_argument("-e", "--end", default=15, type=int, help="終了回数")
@@ -435,8 +527,12 @@ def main() -> None:
     if args.start < 1 or args.end < args.start:
         parser.error("--start と --end の指定が不正です。")
 
-    print("Reading schedule PDF.", file=sys.stderr)
-    all_months = parse_schedule_pdf(args.pdf, args.year)
+    try:
+        pdf_source, source_name = resolve_pdf_source(args.pdf, args.url)
+        print(f"Reading schedule PDF: {source_name}", file=sys.stderr)
+        all_months = parse_schedule_pdf(pdf_source, args.year)
+    except (FileNotFoundError, RuntimeError, ValueError, pymupdf.FileDataError) as e:
+        parser.error(str(e))
 
     # 前期は 4 ～ 8 月、後期は 9 ～ 2 月（旧 Excel 版と同じ対象範囲）
     # ※ all_months の並びは「4月,5月,...,3月」なのでスライスで表せる
@@ -451,4 +547,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

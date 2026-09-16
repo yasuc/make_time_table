@@ -22,14 +22,32 @@ python3 make_time_table.py 2021schedule.xlsx > 2021time_table.csv
 python3 make_time_table_pdf.py -p r8schedule_20260624_1.pdf -t 1 > 2021time_table.csv
 ```
 
+Webページ内で最初にリンクされたPDFを使う場合（相対リンクにも対応）:
+```
+python3 make_time_table_pdf.py -u https://example.jp/schedule.html -t 1 > 2021time_table.csv
+```
+
+`--url` の後のURLを省略すると、沖縄高専の年間行事予定ページを使います。
+```bash
+python3 make_time_table_pdf.py --url -t 1 > 2021time_table.csv
+```
+
+PDFのURLを直接指定することもできます。
+
 **オプション:**
 | オプション | 説明 | デフォルト値 |
 |---|---|---|
-| `-p, --pdf` | 年間行事予定表PDFファイル | r8schedule_20260624_1.pdf |
+| `-p, --pdf` | ローカルの年間行事予定表PDFファイル | （未指定時は r8schedule_20260624_1.pdf） |
+| `-u, --url [URL]` | 最初にリンクされたPDFを取得するWebページ（PDF直URLも可） | オプション指定時にURLを省略すると沖縄高専の年間行事予定ページ |
 | `-s, --start` | 開始回 | 1 |
 | `-e, --end` | 終了回 | 15 |
 | `-t, --term` | 前後期（1:前期, 2:後期） | 1 |
 | `-j, --subjects` | 科目定義JSONファイル | subjects.json |
+| `-y, --year` | 学年度の開始年 | 2026 |
+
+`--pdf` と `--url` は同時には指定できません。オプション自体を両方とも省略した場合は、
+従来どおり `r8schedule_20260624_1.pdf` をローカルから読み込みます。「最初のPDF」は
+HTML内の `<a href="...pdf">` を記載順に見た最初のリンクです。
 
 **依存関係:**
 - PyMuPDF (`pip install pymupdf`)
@@ -78,4 +96,3 @@ python3 make_time_table_pdf.py -p r8schedule_20260624_1.pdf -t 1 > 2021time_tabl
   ]
 }
 ```
-
