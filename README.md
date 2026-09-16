@@ -1,56 +1,60 @@
 # make_time_table 時間割と行事予定のCSVファイル作成ツール
 
 ## 概要
-ExcelファイルまたはPDFファイルから行事予定表や時間割のCSVファイルを作成するツールです。
+年間行事予定表（PDF または Excel ファイル）から時間割用の CSV ファイルを作成するツールです。
+
+`--xlsx` / `--pdf` / `--url` のいずれも指定しない場合は、沖縄高専の年間行事予定表の
+Web ページ（PDF）を自動的に読み込みます。
 
 ## 使い方
 
-### 行事予定表の作成例（Excel）
+### 時間割の作成例（PDF・ローカルファイル）
 ```
-python3 make_schedule.py 2021schedule.xlsx > 2021schedule.csv
+python3 make_time_table.py -p r8schedule_20260624_1.pdf -t 1 > 2021time_table.csv
 ```
 
 ### 時間割の作成例（Excel）
 ```
-python3 make_time_table.py 2021schedule.xlsx > 2021time_table.csv
+python3 make_time_table.py -x 2026schedule.xlsx -t 1 > 2026time_table.csv
+```
+※一度実行すると `make_time_schedule_1_pdflayout.pkl`（前期）または `make_time_schedule_2_pdflayout.pkl`（後期）に
+Excel のデータがシリアライズされ、次回からは高速に読み込まれます。Excel ファイルが更新されている場合は
+自動的に再作成されます。
+
+### 時間割の作成例（URL から取得・沖縄高専デフォルト）
+```
+python3 make_time_table.py -t 1 > 2026time_table.csv
+```
+`--url` を指定せずに実行すると、沖縄高専の年間行事予定表の Web ページに自動的にアクセスし、
+最初にリンクされている PDF を使用します。
+
+Web ページ内で最初にリンクされた PDF を使う場合（相対リンクにも対応）:
+```
+python3 make_time_table.py -u https://example.jp/schedule.html -t 1 > 2026time_table.csv
 ```
 
-※一度実行するとschedule.pklファイルに行事予定表のデータがシリアライズされる。
-
-### 時間割の作成例（PDF）
+`--url` の後の URL を省略すると、沖縄高専の年間行事予定ページを使います。
 ```
-python3 make_time_table_pdf.py -p r8schedule_20260624_1.pdf -t 1 > 2021time_table.csv
+python3 make_time_table.py --url -t 1 > 2026time_table.csv
 ```
 
-Webページ内で最初にリンクされたPDFを使う場合（相対リンクにも対応）:
-```
-python3 make_time_table_pdf.py -u https://example.jp/schedule.html -t 1 > 2021time_table.csv
-```
-
-`--url` の後のURLを省略すると、沖縄高専の年間行事予定ページを使います。
-```bash
-python3 make_time_table_pdf.py --url -t 1 > 2021time_table.csv
-```
-
-PDFのURLを直接指定することもできます。
+PDF の URL を直接指定することもできます。
 
 **オプション:**
 | オプション | 説明 | デフォルト値 |
 |---|---|---|
-| `-p, --pdf` | ローカルの年間行事予定表PDFファイル | （未指定時は r8schedule_20260624_1.pdf） |
-| `-u, --url [URL]` | 最初にリンクされたPDFを取得するWebページ（PDF直URLも可） | オプション指定時にURLを省略すると沖縄高専の年間行事予定ページ |
+| `-x, --xlsx` | ローカルの年間行事予定表 Excel ファイル（.xlsx） | （指定なし = URL から取得） |
+| `-p, --pdf` | ローカルの年間行事予定表 PDF ファイル | （指定なし = URL から取得） |
+| `-u, --url [URL]` | 最初にリンクされた PDF を取得する Web ページ（PDF 直URLも可） | オプション指定時にURLを省略すると沖縄高専の年間行事予定ページ |
 | `-s, --start` | 開始回 | 1 |
 | `-e, --end` | 終了回 | 15 |
 | `-t, --term` | 前後期（1:前期, 2:後期） | 1 |
 | `-j, --subjects` | 科目定義JSONファイル | subjects.json |
-| `-y, --year` | 学年度の開始年 | 2026 |
+| `-y, --year` | 学年度の開始年（PDF のみ使用） | 2026 |
 
-`--pdf` と `--url` は同時には指定できません。オプション自体を両方とも省略した場合は、
-従来どおり `r8schedule_20260624_1.pdf` をローカルから読み込みます。「最初のPDF」は
-HTML内の `<a href="...pdf">` を記載順に見た最初のリンクです。
-
-**依存関係:**
-- PyMuPDF (`pip install pymupdf`)
+- `--xlsx` / `--pdf` / `--url` は同時には指定できません。
+- この 3 つをすべて省略した場合は、沖縄高専の年間行事予定表の Web ページから PDF を取得します。
+- 「最初のPDF」は HTML 内の `<a href="...pdf">` を記載順に見た最初のリンクです。
 
 ## 科目定義ファイル (subjects.json)
 
@@ -96,3 +100,7 @@ HTML内の `<a href="...pdf">` を記載順に見た最初のリンクです。
   ]
 }
 ```
+
+## 依存関係
+- `pymupdf`（PDF 読み取り用）: `pip install pymupdf`
+- `openpyxl`（Excel 読み取り用）: `pip install openpyxl`
