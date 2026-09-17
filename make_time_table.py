@@ -19,7 +19,11 @@
 """
 
 import argparse
+import csv
 import sys
+from collections.abc import Iterator, Sequence
+from itertools import islice
+from typing import TextIO
 
 from schedule_common import (
     DEFAULT_PAGE_URL,
@@ -34,7 +38,36 @@ from schedule_common import (
 )
 
 
-def generate_csv(all_months, subjects, start: int, end: int) -> None:
+def iter_time_table_rows(
+    all_months: list[list[list]], subjects: Sequence[Subject], start: int, end: int
+) -> Iterator[tuple[str, str, str, str, str]]:
+    for subject in subjects:
+        target_column = subject.target_column()
+        dates = (
+            row[0]
+            for month_rows in all_months
+            for row in month_rows
+            if row[0] is not None and row[target_column] is not None
+        )
+        begin_time, end_time = TIME_SLOTS[subject.period - 1]
+        for session, date in islice(enumerate(dates, start=1), start - 1, end):
+            day = date.strftime("%Y/%m/%d")
+            yield (
+                f"講義:{subject.name}[{subject.room}]:{session}",
+                day,
+                begin_time,
+                day,
+                end_time,
+            )
+
+
+def generate_csv(
+    all_months: list[list[list]],
+    subjects: Sequence[Subject],
+    start: int,
+    end: int,
+    output: TextIO | None = None,
+) -> None:
     """科目ごとに授業日をたどり、CSV 形式で標準出力へ書き出す。
 
     CSV の 1 行は
@@ -45,28 +78,28 @@ def generate_csv(all_months, subjects, start: int, end: int) -> None:
     セルが空でない日を「その科目の n 回目の授業日」として数えていき、
     開始回数（start）から終了回数（end）までの行だけを出力します。
     """
-    print("Subject,Start Date,Start Time,End Date,End Time")
-    for subject in subjects:
-        session = 1  # これは何回目の授業かを表すカウンタ
-        target_column = subject.target_column()
-
-        for month_rows in all_months:
-            for row in month_rows:
-                if row[target_column] is None or row[0] is None:
-                    continue  # この曜日に授業がなかった日は読み飛ばす
-
-                if start <= session <= end:
-                    day = row[0].strftime("%Y/%m/%d")
-                    begin_time, end_time = TIME_SLOTS[subject.period - 1]
-                    csv = (
-                        f"講義:{subject.name}[{subject.room}]:{session},"
-                        f"{day},{begin_time},{day},{end_time}"
-                    )
-                    print(csv)
-                session += 1
+    writer = csv.writer(
+        output if output is not None else sys.stdout, lineterminator="\n"
+    )
+    writer.writerow(("Subject", "Start Date", "Start Time", "End Date", "End Time"))
+    writer.writerows(iter_time_table_rows(all_months, subjects, start, end))
 
 
-def main() -> None:
+def load_term_months(
+    xlsx: str | None, pdf: str | None, url: str | None, term: int, year: int | None
+) -> list[list[list]]:
+    if xlsx:
+        return parse_schedule_excel(xlsx, term)
+
+    page_url = None if pdf else url or DEFAULT_PAGE_URL
+    pdf_source, source_name = resolve_pdf_source(pdf, page_url)
+    print(f"Reading schedule PDF: {source_name}", file=sys.stderr)
+    academic_year = year or infer_academic_year(source_name) or current_academic_year()
+    all_months = parse_schedule_pdf(pdf_source, academic_year)
+    return all_months[:5] if term == 1 else all_months[5:11]
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="年間行事予定表（PDF/Excel）から時間割用 CSV データを作成するプログラム"
     )
@@ -118,39 +151,24 @@ def main() -> None:
             "省略時は PDF ファイル名から推測します（r7 → 2025 など）。"
         ),
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     if args.start < 1 or args.end < args.start:
         parser.error("--start と --end の指定が不正です。")
 
     try:
-        if args.xlsx:
-            all_months = parse_schedule_excel(args.xlsx, args.term)
-        elif args.pdf:
-            pdf_source, source_name = resolve_pdf_source(args.pdf, None)
-            print(f"Reading schedule PDF: {source_name}", file=sys.stderr)
-            year = args.year or infer_academic_year(source_name) or current_academic_year()
-            all_months = parse_schedule_pdf(pdf_source, year)
-        else:
-            # --url または引数なし → デフォルト URL
-            url = args.url or DEFAULT_PAGE_URL
-            pdf_source, source_name = resolve_pdf_source(None, url)
-            print(f"Reading schedule PDF: {source_name}", file=sys.stderr)
-            year = args.year or infer_academic_year(source_name) or current_academic_year()
-            all_months = parse_schedule_pdf(pdf_source, year)
-    except (FileNotFoundError, RuntimeError, ValueError) as e:
+        term_months = load_term_months(
+            args.xlsx, args.pdf, args.url, args.term, args.year
+        )
+        subjects = load_subjects(args.subjects, args.term)
+    except (OSError, RuntimeError, ValueError) as e:
         parser.error(str(e))
 
-    # Excel 版は既に前期/後期で絞り込み済み、PDF 版は全年を返すのでスライス
-    if args.xlsx:
-        term_months = all_months
-    else:
-        if args.term == 1:
-            term_months = all_months[:5]  # 4 月 ～ 8 月
-        else:
-            term_months = all_months[5:11]  # 9 月 ～ 2 月
-
-    subjects = load_subjects(args.subjects, args.term)
     generate_csv(term_months, subjects, args.start, args.end)
 
 

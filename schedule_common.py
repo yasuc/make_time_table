@@ -27,20 +27,21 @@ import sys
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 try:
     import pymupdf
-except ImportError as e:
+except ImportError:
     pymupdf = None  # PDF 未対応時は後でエラー
 
 try:
     import openpyxl
-except ImportError as e:
+    from openpyxl.worksheet.worksheet import Worksheet
+except ImportError:
     openpyxl = None  # Excel 未対応時は後でエラー
+    Worksheet = type("Worksheet", (), {})  # ダミー（openpyxl 未導入時は使われない）
 
 # ==========================================================================
 # 設定値
@@ -181,8 +182,9 @@ def old_pklfile_del(xlsx_file: str, pkl_file: str) -> None:
         return
     p_xlsx = Path(xlsx_file)
     p_pkl = Path(pkl_file)
-    if datetime.datetime.fromtimestamp(p_xlsx.stat().st_mtime) > \
-       datetime.datetime.fromtimestamp(p_pkl.stat().st_mtime):
+    if datetime.datetime.fromtimestamp(
+        p_xlsx.stat().st_mtime
+    ) > datetime.datetime.fromtimestamp(p_pkl.stat().st_mtime):
         os.remove(pkl_file)
 
 
@@ -194,32 +196,55 @@ def normalize_excel_row(raw_row: list) -> list:
     """
     row: list = [None] * TOTAL_COLUMNS
     row[0] = raw_row[0]  # 日付
-    row[EVENT_COL_START:EVENT_COL_END] = raw_row[EXCEL_EVENT_COL_START:EXCEL_EVENT_COL_END]  # 行事欄
-    row[DATA_COL_OFFSET:DATA_COL_OFFSET + NUM_WEEKDAYS] = raw_row[EXCEL_HS_COL_START:EXCEL_HS_COL_END]  # 本科
-    row[DATA_COL_OFFSET + NUM_WEEKDAYS:DATA_COL_OFFSET + NUM_WEEKDAYS * 2] = raw_row[EXCEL_SS_COL_START:EXCEL_SS_COL_END]  # 専攻科
+    row[EVENT_COL_START:EVENT_COL_END] = raw_row[
+        EXCEL_EVENT_COL_START:EXCEL_EVENT_COL_END
+    ]  # 行事欄
+    row[DATA_COL_OFFSET : DATA_COL_OFFSET + NUM_WEEKDAYS] = raw_row[
+        EXCEL_HS_COL_START:EXCEL_HS_COL_END
+    ]  # 本科
+    row[DATA_COL_OFFSET + NUM_WEEKDAYS : DATA_COL_OFFSET + NUM_WEEKDAYS * 2] = raw_row[
+        EXCEL_SS_COL_START:EXCEL_SS_COL_END
+    ]  # 専攻科
     return row
 
 
-def _load_excel_months(xlsx_file: str, start_col: int, num_months: int) -> list[list[list]]:
+def _load_excel_months(
+    xlsx_file: str, start_col: int, num_months: int
+) -> list[list[list]]:
     """Excel の指定した列範囲を行事予定表の共通形式で読み、月ごとの表を返す。"""
+    if openpyxl is None:
+        raise SystemExit(
+            "openpyxl が必要です。pip install openpyxl でインストールしてください。"
+        )
+
     wb = openpyxl.load_workbook(xlsx_file, data_only=True)
-    sheet = wb.active
+    try:
+        sheet = wb.active
+        if not isinstance(sheet, Worksheet):
+            raise ValueError("Excel のアクティブシートがワークシートではありません。")
 
-    all_months = []
-    c = start_col
-    for _ in range(num_months):
-        month_data = []
-        for row in sheet.iter_rows(
-            min_row=EXCEL_START_ROW, max_row=EXCEL_END_ROW,
-            min_col=c, max_col=c + EXCEL_BLOCK_COLS - 1,
-        ):
-            month_data.append(normalize_excel_row([cell.value for cell in row]))
-        all_months.append(month_data)
-        c += EXCEL_BLOCK_COLS
-    return all_months
+        all_months = []
+        for month in range(num_months):
+            start = start_col + month * EXCEL_BLOCK_COLS
+            month_data = [
+                normalize_excel_row(list(row))
+                for row in sheet.iter_rows(
+                    min_row=EXCEL_START_ROW,
+                    max_row=EXCEL_END_ROW,
+                    min_col=start,
+                    max_col=start + EXCEL_BLOCK_COLS - 1,
+                    values_only=True,
+                )
+            ]
+            all_months.append(month_data)
+        return all_months
+    finally:
+        wb.close()
 
 
-def parse_schedule_excel(xlsx_file: str, term: int, pkl_cache: Optional[str] = None) -> list[list[list]]:
+def parse_schedule_excel(
+    xlsx_file: str, term: int, pkl_cache: str | None = None
+) -> list[list[list]]:
     """Excel ファイルから指定した期の行事予定表を読み、月ごとの表を返す。
 
     term=1 は前期（4 ～ 8 月）、term=2 は後期（9 ～ 2 月）です。
@@ -256,7 +281,9 @@ def parse_schedule_excel(xlsx_file: str, term: int, pkl_cache: Optional[str] = N
     return all_months
 
 
-def parse_schedule_excel_all(xlsx_file: str, pkl_cache: Optional[str] = None) -> list[list[list]]:
+def parse_schedule_excel_all(
+    xlsx_file: str, pkl_cache: str | None = None
+) -> list[list[list]]:
     """Excel ファイルから年間行事予定表（全 12 か月）を読み、月ごとの表を返す。"""
     if openpyxl is None:
         raise SystemExit(
@@ -341,7 +368,9 @@ def find_weekday_columns(page, block_left: float) -> list[float]:
 
         x = word_center_x(word)
         # 対象の月ブロックの範囲内の曜日だけを採用する
-        if not (block_left + WEEKDAY_LABEL_X_MIN <= x <= block_left + WEEKDAY_LABEL_X_MAX):
+        if not (
+            block_left + WEEKDAY_LABEL_X_MIN <= x <= block_left + WEEKDAY_LABEL_X_MAX
+        ):
             continue
 
         if len(text) == 1:
@@ -405,21 +434,19 @@ def find_row_boundaries(page) -> list[float]:
         for item in drawing["items"]:
             if item[0] == "l":
                 p1, p2 = item[1], item[2]
-                if abs(p1.y - p2.y) < 0.5 and abs(p2.x - p1.x) >= ROW_BOUNDARY_MIN_WIDTH:
+                if (
+                    abs(p1.y - p2.y) < 0.5
+                    and abs(p2.x - p1.x) >= ROW_BOUNDARY_MIN_WIDTH
+                ):
                     ys.add(round(p1.y, 1))
             elif item[0] == "re":
                 rect = item[1]
-                if (
-                    rect.width >= ROW_BOUNDARY_MIN_WIDTH
-                    and rect.height < 1.5
-                ):
+                if rect.width >= ROW_BOUNDARY_MIN_WIDTH and rect.height < 1.5:
                     ys.add(round(rect.y0, 1))
-    return sorted(
-        y for y in ys if ROW_BOUNDARY_Y_MIN <= y <= ROW_BOUNDARY_Y_MAX
-    )
+    return sorted(y for y in ys if ROW_BOUNDARY_Y_MIN <= y <= ROW_BOUNDARY_Y_MAX)
 
 
-def _row_index(boundaries: list[float], y: float) -> Optional[int]:
+def _row_index(boundaries: list[float], y: float) -> int | None:
     """y 座標が含まれる行の添字を返す（行の境界線は [ 開始, 終了 ) で判定）。"""
     for index in range(len(boundaries) - 1):
         if boundaries[index] <= y < boundaries[index + 1]:
@@ -427,7 +454,7 @@ def _row_index(boundaries: list[float], y: float) -> Optional[int]:
     return None
 
 
-def get_cell_value(page, x: float, y: float, words) -> Optional[int]:
+def get_cell_value(page, x: float, y: float, words) -> int | None:
     """座標 (x, y) のセル内に「回数」の数字があればその値を返す。
 
     セル内の数字は行の日付数字とほとんど同じ場所にあります。
@@ -445,7 +472,9 @@ def get_cell_value(page, x: float, y: float, words) -> Optional[int]:
     return None
 
 
-def _find_event_words(words, block_left: float) -> list[tuple[float, float, float, str]]:
+def _find_event_words(
+    words, block_left: float
+) -> list[tuple[float, float, float, str]]:
     """月ブロックの行事欄（日付列と曜日列の間）にあるテキストを抽出する。
 
     帰り値は (y 中心, x 開始, x 終了, 文字列) のリストです。
@@ -458,7 +487,9 @@ def _find_event_words(words, block_left: float) -> list[tuple[float, float, floa
         x0, x1 = word[0], word[2]
         y = word_center_y(word)
         if not (
-            block_left + EVENT_LABEL_X_MIN <= (x0 + x1) / 2 <= block_left + EVENT_LABEL_X_MAX
+            block_left + EVENT_LABEL_X_MIN
+            <= (x0 + x1) / 2
+            <= block_left + EVENT_LABEL_X_MAX
             and DATE_LABEL_Y_MIN <= y <= DATE_LABEL_Y_MAX
         ):
             continue
@@ -474,13 +505,13 @@ def _join_event_text(words_in_line: list[tuple[float, float, str]]) -> list[str]
     """
     lines = sorted(words_in_line)
     merged: list[str] = []
+    last_x1 = float("-inf")
     for x0, x1, text in lines:
         if merged and x0 - last_x1 <= MAX_EVENT_WORD_GAP:
             merged[-1] += text
-            last_x1 = x1
         else:
             merged.append(text)
-            last_x1 = x1
+        last_x1 = x1
     return merged
 
 
@@ -495,9 +526,7 @@ def _row_event_texts(words_in_row: list[tuple[float, float, float, str]]) -> lis
             lines.append([word])
     texts: list[str] = []
     for line in lines:
-        texts.extend(
-            _join_event_text([(x0, x1, text) for _, x0, x1, text in line])
-        )
+        texts.extend(_join_event_text([(x0, x1, text) for _, x0, x1, text in line]))
     return texts
 
 
@@ -537,9 +566,7 @@ def parse_month(page, month_header_x: float, month: int, year: int) -> list[list
 
     # 罫線が取れなかった場合は、日付との距離で対応付ける（フォールバック）
     if not row_info:
-        ordered_info = [
-            {"day": day, "y": y, "events": []} for day, y in date_positions
-        ]
+        ordered_info = [{"day": day, "y": y, "events": []} for day, y in date_positions]
         for ey, x0, x1, text in event_words:
             nearest = min(
                 ordered_info, key=lambda info: abs(info["y"] - ey), default=None
@@ -637,7 +664,7 @@ class PdfLinkParser(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__()
-        self.first_pdf_href: Optional[str] = None
+        self.first_pdf_href: str | None = None
 
     def handle_starttag(self, tag: str, attrs) -> None:
         if self.first_pdf_href is not None or tag.lower() != "a":
@@ -678,7 +705,9 @@ def load_pdf_from_url(page_url: str) -> tuple[bytes, str]:
     try:
         parser.feed(data.decode("utf-8", errors="replace"))
     except Exception as e:
-        raise ValueError(f"Web ページの HTML を解析できませんでした: {final_url}") from e
+        raise ValueError(
+            f"Web ページの HTML を解析できませんでした: {final_url}"
+        ) from e
 
     if parser.first_pdf_href is None:
         raise ValueError(f"Web ページに PDF へのリンクがありません: {final_url}")
@@ -690,7 +719,7 @@ def load_pdf_from_url(page_url: str) -> tuple[bytes, str]:
     return pdf_data, resolved_pdf_url
 
 
-def resolve_pdf_source(pdf_file: Optional[str], page_url: Optional[str]):
+def resolve_pdf_source(pdf_file: str | None, page_url: str | None):
     """CLI の指定から PyMuPDF に渡す入力元と表示名を返す。"""
     if page_url:
         pdf_data, pdf_url = load_pdf_from_url(page_url)
@@ -702,7 +731,7 @@ def resolve_pdf_source(pdf_file: Optional[str], page_url: Optional[str]):
     return path, str(path)
 
 
-def infer_academic_year(source_name: str) -> Optional[int]:
+def infer_academic_year(source_name: str) -> int | None:
     """ファイル名・URL から学年度（開始年）を推測する。
 
     例: r7schedule_20251030.pdf → 2025 （令和7年度）

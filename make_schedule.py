@@ -18,13 +18,16 @@
 """
 
 import argparse
+import csv
 import re
 import sys
+from collections.abc import Iterator, Sequence
+from typing import TextIO
 
 from schedule_common import (
     DEFAULT_PAGE_URL,
-    EVENT_COL_START,
     EVENT_COL_END,
+    EVENT_COL_START,
     current_academic_year,
     infer_academic_year,
     parse_schedule_excel_all,
@@ -33,19 +36,9 @@ from schedule_common import (
 )
 
 
-def generate_event_csv(all_months) -> None:
-    """月ごとの表から行事を読み取り、CSV で標準出力へ流す。
-
-    出力形式は
-        件名, 開始日, TRUE
-    の 3 列カンマ区切りです（3 列目は「終日イベント」フラグ）。
-
-    各行の [0] で日付が確定していない間は、直前の日付を引き継ぎます。
-    行事のテキストからは「※」から始まる注釈と空白を取り除きます。
-    """
-    print("Subject,Start Date,All Day Event")
+def iter_event_rows(all_months: list[list[list]]) -> Iterator[tuple[str, str, str]]:
+    day = ""
     for month_rows in all_months:
-        day = ""
         for row in month_rows:
             if row[0] is not None:
                 day = row[0].strftime("%Y/%m/%d")
@@ -55,10 +48,29 @@ def generate_event_csv(all_months) -> None:
                 subj = re.sub("※.*", "", row[col])
                 subj = re.sub("[ 　]+", "", subj)
                 if subj != "":
-                    print(f"{subj},{day},TRUE")
+                    yield subj, day, "TRUE"
 
 
-def main() -> None:
+def generate_event_csv(
+    all_months: list[list[list]], output: TextIO | None = None
+) -> None:
+    """月ごとの表から行事を読み取り、CSV で標準出力へ流す。
+
+    出力形式は
+        件名, 開始日, TRUE
+    の 3 列カンマ区切りです（3 列目は「終日イベント」フラグ）。
+
+    各行の [0] で日付が確定していない間は、直前の日付を引き継ぎます。
+    行事のテキストからは「※」から始まる注釈と空白を取り除きます。
+    """
+    writer = csv.writer(
+        output if output is not None else sys.stdout, lineterminator="\n"
+    )
+    writer.writerow(("Subject", "Start Date", "All Day Event"))
+    writer.writerows(iter_event_rows(all_months))
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="年間行事予定表（PDF/Excel）から行事予定の CSV データを作成するプログラム"
     )
@@ -94,21 +106,29 @@ def main() -> None:
             "省略時は PDF ファイル名から推測します（r7 → 2025 など）。"
         ),
     )
-    args = parser.parse_args()
+    return parser
+
+
+def load_all_months(
+    xlsx: str | None, pdf: str | None, url: str | None, year: int | None
+) -> list[list[list]]:
+    if xlsx:
+        return parse_schedule_excel_all(xlsx)
+
+    page_url = None if pdf else url or DEFAULT_PAGE_URL
+    pdf_source, source_name = resolve_pdf_source(pdf, page_url)
+    print(f"Reading schedule PDF: {source_name}", file=sys.stderr)
+    academic_year = year or infer_academic_year(source_name) or current_academic_year()
+    return parse_schedule_pdf(pdf_source, academic_year)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     try:
-        if args.xlsx:
-            all_months = parse_schedule_excel_all(args.xlsx)
-        else:
-            if args.pdf:
-                pdf_source, source_name = resolve_pdf_source(args.pdf, None)
-            else:
-                url = args.url or DEFAULT_PAGE_URL
-                pdf_source, source_name = resolve_pdf_source(None, url)
-            print(f"Reading schedule PDF: {source_name}", file=sys.stderr)
-            year = args.year or infer_academic_year(source_name) or current_academic_year()
-            all_months = parse_schedule_pdf(pdf_source, year)
-    except (FileNotFoundError, RuntimeError, ValueError) as e:
+        all_months = load_all_months(args.xlsx, args.pdf, args.url, args.year)
+    except (OSError, RuntimeError, ValueError) as e:
         parser.error(str(e))
 
     generate_event_csv(all_months)
